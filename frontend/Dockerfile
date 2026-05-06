@@ -1,16 +1,14 @@
 FROM node:20-alpine AS build
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+
 WORKDIR /app
 
-ENV HTTP_PROXY= \
-    HTTPS_PROXY= \
-    http_proxy= \
-    https_proxy=
-
 COPY frontend/package.json .
-RUN npm config set proxy null && \
-    npm config set https-proxy null && \
-    npm install --registry https://registry.npmmirror.com
+RUN npm install --registry https://registry.npmmirror.com
 
 COPY frontend/ .
 RUN npm run build

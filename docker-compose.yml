@@ -69,6 +69,11 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
     ports:
       - "80:80"
     depends_on:
