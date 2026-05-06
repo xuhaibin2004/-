@@ -7,10 +7,27 @@
 
     <el-table :data="agents" stripe>
       <el-table-column prop="name" label="名称" width="150" />
-      <el-table-column prop="provider" label="Provider" width="120" />
+      <el-table-column label="LLM配置" width="180">
+        <template #default="{ row }">
+          <span v-if="row.llm_config_id">{{ getLLMConfigName(row.llm_config_id) }}</span>
+          <span v-else>{{ row.provider }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="model" label="模型" width="180" />
       <el-table-column prop="temperature" label="温度" width="80" />
-      <el-table-column prop="role_description" label="角色描述" show-overflow-tooltip />
+      <el-table-column label="工具" width="120">
+        <template #default="{ row }">
+          <el-tag v-for="t in (row.tools || [])" :key="t" size="small" style="margin: 2px">{{ t }}</el-tag>
+          <span v-if="!row.tools || row.tools.length === 0">-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="流式" width="60">
+        <template #default="{ row }">
+          <el-tag :type="row.enable_streaming ? 'success' : 'info'" size="small">
+            {{ row.enable_streaming ? '是' : '否' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="180">
         <template #default="{ row }">
           <el-button size="small" @click="editAgent(row)">编辑</el-button>
@@ -24,14 +41,23 @@
         <el-form-item label="名称">
           <el-input v-model="agentForm.name" placeholder="Agent名称" />
         </el-form-item>
-        <el-form-item label="Provider">
-          <el-select v-model="agentForm.provider">
-            <el-option label="OpenAI" value="openai" />
-            <el-option label="Anthropic" value="anthropic" />
+        <el-form-item label="LLM配置">
+          <el-select v-model="agentForm.llm_config_id" placeholder="选择LLM配置" clearable style="width: 100%" @change="onLLMConfigChange">
+            <el-option v-for="cfg in llmConfigs" :key="cfg.id" :label="cfg.name" :value="cfg.id" />
           </el-select>
+          <div v-if="!agentForm.llm_config_id" style="margin-top: 8px">
+            <el-select v-model="agentForm.provider" style="width: 48%; margin-right: 4%">
+              <el-option label="OpenAI" value="openai" />
+              <el-option label="Anthropic" value="anthropic" />
+              <el-option label="OpenAI 兼容" value="openai_compatible" />
+            </el-select>
+            <el-input v-model="agentForm.model" placeholder="模型名称" style="width: 48%" />
+          </div>
         </el-form-item>
-        <el-form-item label="模型">
-          <el-input v-model="agentForm.model" placeholder="如: gpt-4o, gpt-4o-mini, claude-sonnet-4-20250514" />
+        <el-form-item v-if="agentForm.llm_config_id" label="模型">
+          <el-select v-model="agentForm.model" style="width: 100%">
+            <el-option v-for="m in availableModels" :key="m" :label="m" :value="m" />
+          </el-select>
         </el-form-item>
         <el-form-item label="温度">
           <el-slider v-model="agentForm.temperature" :min="0" :max="2" :step="0.1" show-input />
@@ -41,6 +67,17 @@
         </el-form-item>
         <el-form-item label="Prompt模板">
           <el-input v-model="agentForm.prompt_template" type="textarea" :rows="8" placeholder="可用变量: {plot_summary}, {memory_context}, {world_setting}, {characters}, {style}, {genre}, {feedback}" />
+        </el-form-item>
+        <el-form-item label="绑定工具">
+          <el-checkbox-group v-model="agentForm.tools">
+            <el-checkbox v-for="tool in toolList" :key="tool.name" :label="tool.name" :value="tool.name">
+              {{ tool.name }}
+              <span style="color: #999; font-size: 12px">- {{ tool.description }}</span>
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="启用流式输出">
+          <el-switch v-model="agentForm.enable_streaming" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -52,15 +89,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { agentApi, type AgentConfig } from '@/api/agents'
+import { llmConfigApi, type LLMConfigBrief } from '@/api/llmConfigs'
+import { toolApi, type ToolDefinition } from '@/api/tools'
 
 const route = useRoute()
 const projectId = route.params.id as string
 
 const agents = ref<AgentConfig[]>([])
+const llmConfigs = ref<LLMConfigBrief[]>([])
+const toolList = ref<ToolDefinition[]>([])
 const showAddDialog = ref(false)
 const saving = ref(false)
 const editingAgent = ref<AgentConfig | null>(null)
@@ -72,11 +113,37 @@ const defaultForm = {
   model: 'gpt-4o-mini',
   temperature: 0.7,
   role_description: '',
+  llm_config_id: '' as string,
+  tools: [] as string[],
+  enable_streaming: false,
 }
 
 const agentForm = reactive({ ...defaultForm })
 
-const editAgent = (agent: AgentConfig) => {
+const availableModels = computed(() => {
+  if (!agentForm.llm_config_id) return []
+  const cfg = llmConfigs.value.find(c => c.id === agentForm.llm_config_id)
+  return cfg?.available_models || []
+})
+
+const getLLMConfigName = (id: string) => {
+  const cfg = llmConfigs.value.find(c => c.id === id)
+  return cfg?.name || id
+}
+
+const onLLMConfigChange = (configId: string) => {
+  if (configId) {
+    const cfg = llmConfigs.value.find(c => c.id === configId)
+    if (cfg) {
+      agentForm.provider = cfg.provider_type
+      if (cfg.available_models.length > 0) {
+        agentForm.model = cfg.available_models[0]
+      }
+    }
+  }
+}
+
+const editAgent = (agent: any) => {
   editingAgent.value = agent
   Object.assign(agentForm, {
     name: agent.name,
@@ -85,6 +152,9 @@ const editAgent = (agent: AgentConfig) => {
     model: agent.model,
     temperature: agent.temperature,
     role_description: agent.role_description,
+    llm_config_id: agent.llm_config_id || '',
+    tools: agent.tools || [],
+    enable_streaming: agent.enable_streaming || false,
   })
   showAddDialog.value = true
 }
@@ -92,11 +162,15 @@ const editAgent = (agent: AgentConfig) => {
 const saveAgent = async () => {
   saving.value = true
   try {
+    const data: any = { ...agentForm }
+    if (!data.llm_config_id) {
+      delete data.llm_config_id
+    }
     if (editingAgent.value) {
-      await agentApi.update(editingAgent.value.id, agentForm)
+      await agentApi.update(editingAgent.value.id, data)
       ElMessage.success('更新成功')
     } else {
-      await agentApi.create(projectId, agentForm)
+      await agentApi.create(projectId, data)
       ElMessage.success('添加成功')
     }
     showAddDialog.value = false
@@ -121,7 +195,14 @@ const deleteAgent = async (id: string) => {
 
 onMounted(async () => {
   try {
-    agents.value = (await agentApi.list(projectId) as any) || []
+    const [agentData, llmData, toolData] = await Promise.all([
+      agentApi.list(projectId),
+      llmConfigApi.brief(),
+      toolApi.list(),
+    ])
+    agents.value = (agentData as any) || []
+    llmConfigs.value = (llmData as any) || []
+    toolList.value = (toolData as any) || []
   } catch (e) {
     console.error(e)
   }

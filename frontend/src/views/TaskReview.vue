@@ -66,6 +66,7 @@
           <el-button size="small" @click="openEditor(result)">编辑</el-button>
           <el-button size="small" type="primary" @click="openFeedback(result)">反馈</el-button>
           <el-button size="small" type="success" @click="finalizeResult(result)">选为最终</el-button>
+          <el-button size="small" type="warning" @click="openStreamRegenerate(result)">流式重新生成</el-button>
         </div>
       </el-card>
     </div>
@@ -100,6 +101,18 @@
         <el-button type="primary" @click="submitFeedback" :loading="submittingFeedback">提交</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showStreamRegen" title="流式重新生成" width="700px">
+      <StreamPreview
+        v-if="showStreamRegen"
+        ref="streamPreviewRef"
+        :agent-config-id="streamRegenAgentId"
+        :prompt="reviewData?.task?.plot_summary || ''"
+        :project-id="reviewData?.task?.project_id"
+        @done="onStreamRegenDone"
+        @error="onStreamRegenError"
+      />
+    </el-dialog>
   </div>
   <el-skeleton v-else :rows="10" animated />
 </template>
@@ -109,6 +122,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/api/index'
+import StreamPreview from '@/components/StreamPreview.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,6 +131,9 @@ const taskId = route.params.id as string
 const reviewData = ref<any>(null)
 const showEditor = ref(false)
 const showFeedback = ref(false)
+const showStreamRegen = ref(false)
+const streamRegenAgentId = ref('')
+const streamPreviewRef = ref<InstanceType<typeof StreamPreview> | null>(null)
 const editing = ref(false)
 const rechecking = ref(false)
 const submittingFeedback = ref(false)
@@ -211,6 +228,23 @@ const finalizeResult = async (result: any) => {
 }
 
 const selectResult = (result: any) => {}
+
+const openStreamRegenerate = (result: any) => {
+  streamRegenAgentId.value = result.agent_config_id || ''
+  showStreamRegen.value = true
+  setTimeout(() => {
+    streamPreviewRef.value?.start()
+  }, 100)
+}
+
+const onStreamRegenDone = () => {
+  ElMessage.success('重新生成完成')
+  fetchReview()
+}
+
+const onStreamRegenError = (err: string) => {
+  ElMessage.error(`重新生成失败: ${err}`)
+}
 
 const fetchReview = async () => {
   try {

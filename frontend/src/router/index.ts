@@ -42,6 +42,16 @@ const router = createRouter({
       name: 'TaskReview',
       component: () => import('@/views/TaskReview.vue'),
     },
+    {
+      path: '/llm-configs',
+      name: 'LLMConfigList',
+      component: () => import('@/views/LLMConfigList.vue'),
+    },
+    {
+      path: '/tools',
+      name: 'ToolManagement',
+      component: () => import('@/views/ToolManagement.vue'),
+    },
   ],
 })
 

@@ -12,6 +12,9 @@ class AgentCreate(BaseModel):
     model: str = "gpt-4o-mini"
     temperature: float = 0.7
     role_description: str = ""
+    llm_config_id: Optional[str] = None
+    tools: list[str] = []
+    enable_streaming: bool = False
 
 
 class AgentUpdate(BaseModel):
@@ -21,6 +24,9 @@ class AgentUpdate(BaseModel):
     model: Optional[str] = None
     temperature: Optional[float] = None
     role_description: Optional[str] = None
+    llm_config_id: Optional[str] = None
+    tools: Optional[list[str]] = None
+    enable_streaming: Optional[bool] = None
 
 
 class AgentResponse(BaseModel):
@@ -35,4 +41,7 @@ class AgentResponse(BaseModel):
     temperature: float
     role_description: str
     is_builtin: bool
+    llm_config_id: Optional[UUID] = None
+    tools: list[str] = []
+    enable_streaming: bool = False
     created_at: datetime

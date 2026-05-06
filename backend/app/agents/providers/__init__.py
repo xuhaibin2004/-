@@ -1,10 +1,12 @@
 from app.agents.providers.base import LLMProvider, GenerateResult
 from app.agents.providers.openai_provider import OpenAIProvider
 from app.agents.providers.anthropic_provider import AnthropicProvider
+from app.agents.providers.openai_compatible_provider import OpenAICompatibleProvider
 
 PROVIDER_REGISTRY = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "openai_compatible": OpenAICompatibleProvider,
 }
 
 

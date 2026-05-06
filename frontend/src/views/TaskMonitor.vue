@@ -39,6 +39,28 @@
       <div v-else>
         <el-alert title="任务执行中，请稍候..." type="info" :closable="false" show-icon />
       </div>
+
+      <el-divider />
+
+      <div class="stream-section">
+        <h3>实时生成预览</h3>
+        <div class="stream-controls">
+          <el-select v-model="selectedAgentConfigId" placeholder="选择Agent" style="width: 300px; margin-right: 12px">
+            <el-option v-for="a in agentConfigs" :key="a.id" :label="a.name" :value="a.id" />
+          </el-select>
+          <el-button type="primary" @click="startStream" :disabled="!selectedAgentConfigId || streamActive">开始预览</el-button>
+          <el-button @click="stopStream" :disabled="!streamActive">停止</el-button>
+        </div>
+        <StreamPreview
+          v-if="showStreamPreview"
+          ref="streamPreviewRef"
+          :agent-config-id="selectedAgentConfigId"
+          :prompt="task.plot_summary"
+          :project-id="task.project_id"
+          @done="onStreamDone"
+          @error="onStreamError"
+        />
+      </div>
     </div>
     <el-skeleton v-else :rows="5" animated />
   </div>
@@ -47,13 +69,21 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { taskApi, type Task } from '@/api/tasks'
+import { agentApi } from '@/api/agents'
+import StreamPreview from '@/components/StreamPreview.vue'
 
 const route = useRoute()
 const taskId = route.params.id as string
 
 const task = ref<Task | null>(null)
 const agentStatuses = ref<any[]>([])
+const agentConfigs = ref<any[]>([])
+const selectedAgentConfigId = ref('')
+const streamActive = ref(false)
+const showStreamPreview = ref(false)
+const streamPreviewRef = ref<InstanceType<typeof StreamPreview> | null>(null)
 let ws: WebSocket | null = null
 let pollTimer: any = null
 
@@ -110,9 +140,36 @@ const connectWebSocket = () => {
   }
 }
 
+const startStream = () => {
+  if (!selectedAgentConfigId.value) return
+  showStreamPreview.value = true
+  streamActive.value = true
+  setTimeout(() => {
+    streamPreviewRef.value?.start()
+  }, 100)
+}
+
+const stopStream = () => {
+  streamPreviewRef.value?.stop()
+  streamActive.value = false
+}
+
+const onStreamDone = () => {
+  streamActive.value = false
+  ElMessage.success('生成完成')
+}
+
+const onStreamError = (err: string) => {
+  streamActive.value = false
+  ElMessage.error(`生成失败: ${err}`)
+}
+
 onMounted(async () => {
   try {
     task.value = await taskApi.get(taskId) as any
+    if (task.value?.project_id) {
+      agentConfigs.value = (await agentApi.list(task.value.project_id) as any) || []
+    }
   } catch (e) {
     console.error(e)
   }
@@ -145,5 +202,13 @@ onUnmounted(() => {
 .agent-detail {
   color: #999;
   font-size: 13px;
+}
+.stream-section {
+  margin-top: 16px;
+}
+.stream-controls {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
 }
 </style>

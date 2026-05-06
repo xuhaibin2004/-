@@ -14,6 +14,8 @@ from app.core.redis import redis_client, STREAM_KEY, STREAM_GROUP, STATUS_CHANNE
 from app.models.task import Task
 from app.models.project import Project
 from app.models.agent_config import AgentConfig
+from app.models.llm_config import LLMProviderConfig
+from app.models.tool_definition import ToolDefinition
 from app.models.generation_result import GenerationResult
 from app.models.score_result import ScoreResult
 from app.agents.generation_agent import GenerationAgent, create_diverse_agents
@@ -53,6 +55,27 @@ class TaskScheduler:
                     await publish_task_status(str(task_id), "failed", {"error": "No agent configs found"})
                     return
 
+                llm_configs_cache = {}
+                for ac in agent_configs:
+                    if ac.llm_config_id and ac.llm_config_id not in llm_configs_cache:
+                        llm_config = await db.get(LLMProviderConfig, ac.llm_config_id)
+                        llm_configs_cache[ac.llm_config_id] = llm_config
+
+                tool_defs_cache = {}
+                for ac in agent_configs:
+                    if ac.tools:
+                        for tool_name in ac.tools:
+                            if tool_name not in tool_defs_cache:
+                                tresult = await db.execute(
+                                    select(ToolDefinition).where(
+                                        ToolDefinition.name == tool_name,
+                                        ToolDefinition.is_active == True,
+                                    )
+                                )
+                                tdef = tresult.scalars().first()
+                                if tdef:
+                                    tool_defs_cache[tool_name] = tdef
+
                 memory_service = MemoryService(db)
                 memories = await memory_service.search_memories(task.project_id, task.plot_summary)
                 memory_context = "\n".join([f"- {m.content}" for m in memories])
@@ -77,7 +100,8 @@ class TaskScheduler:
                                 feedback = f"上一轮评分最低的结果分析：AI率={score.ai_rate_score:.1f}, 创意性={score.creativity_score:.1f}, 连贯性={score.coherence_score:.1f}, 风格匹配={score.style_match_score:.1f}。请避免上述问题，努力降低AI率，提升自然度。"
 
                     gen_results = await self._run_generation(
-                        db, task, agent_configs, memory_context, project, iteration, feedback
+                        db, task, agent_configs, llm_configs_cache, tool_defs_cache,
+                        memory_context, project, iteration, feedback
                     )
 
                     await self._update_task_status(db, task, "evaluating")
@@ -117,22 +141,33 @@ class TaskScheduler:
         db: AsyncSession,
         task: Task,
         agent_configs: list[AgentConfig],
+        llm_configs_cache: dict,
+        tool_defs_cache: dict,
         memory_context: str,
         project: Project,
         iteration: int,
         feedback: str,
     ) -> list[GenerationResult]:
-        config_dicts = [
-            {
+        config_dicts = []
+        for ac in agent_configs:
+            llm_config = llm_configs_cache.get(ac.llm_config_id) if ac.llm_config_id else None
+            agent_tool_defs = [tool_defs_cache[t] for t in (ac.tools or []) if t in tool_defs_cache]
+            config_dicts.append({
                 "name": ac.name,
                 "prompt_template": ac.prompt_template,
-                "provider": ac.provider,
+                "provider": llm_config.provider_type if llm_config else ac.provider,
                 "model": ac.model,
                 "temperature": ac.temperature,
                 "role_description": ac.role_description,
-            }
-            for ac in agent_configs
-        ]
+                "llm_config_id": str(ac.llm_config_id) if ac.llm_config_id else None,
+                "api_key": llm_config.api_key if llm_config else "",
+                "base_url": llm_config.base_url if llm_config else "",
+                "tools": ac.tools or [],
+                "tool_definitions": agent_tool_defs,
+                "enable_streaming": ac.enable_streaming,
+                "db": db,
+                "project_id": str(task.project_id),
+            })
         agents = create_diverse_agents(config_dicts)
 
         gen_coroutines = []

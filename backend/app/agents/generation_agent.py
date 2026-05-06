@@ -2,9 +2,11 @@ import asyncio
 import time
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from app.agents.provider_manager import provider_manager
+from app.agents.tool_executor import ToolExecutor
+from app.agents.tool_calling_loop import run_with_tools, stream_with_tools
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,14 @@ class GenerationAgent:
         temperature: float = 0.7,
         role_description: str = "",
         timeout: int = None,
+        llm_config_id: str = None,
+        api_key: str = "",
+        base_url: str = "",
+        tools: list[str] = None,
+        tool_definitions: list = None,
+        enable_streaming: bool = False,
+        db=None,
+        project_id: str = None,
     ):
         self.name = name
         self.prompt_template = prompt_template
@@ -39,6 +49,14 @@ class GenerationAgent:
         self.temperature = temperature
         self.role_description = role_description
         self.timeout = timeout or settings.DEFAULT_AGENT_TIMEOUT
+        self.llm_config_id = llm_config_id
+        self.api_key = api_key
+        self.base_url = base_url
+        self.tools = tools or []
+        self.tool_definitions = tool_definitions or []
+        self.enable_streaming = enable_streaming
+        self.db = db
+        self.project_id = project_id
 
     def build_prompt(
         self,
@@ -65,15 +83,33 @@ class GenerationAgent:
     async def generate(self, prompt: str) -> GenerationOutput:
         start_time = time.time()
         try:
-            result = await asyncio.wait_for(
-                provider_manager.generate_with_fallback(
-                    provider_name=self.provider,
-                    model=self.model,
-                    prompt=prompt,
-                    temperature=self.temperature,
-                ),
-                timeout=self.timeout,
-            )
+            if self.tools and self.tool_definitions:
+                result = await asyncio.wait_for(
+                    self._generate_with_tools(prompt),
+                    timeout=self.timeout,
+                )
+            elif self.api_key:
+                result = await asyncio.wait_for(
+                    provider_manager.generate_from_config(
+                        provider_type=self.provider,
+                        model=self.model,
+                        api_key=self.api_key,
+                        base_url=self.base_url,
+                        prompt=prompt,
+                        temperature=self.temperature,
+                    ),
+                    timeout=self.timeout,
+                )
+            else:
+                result = await asyncio.wait_for(
+                    provider_manager.generate_with_fallback(
+                        provider_name=self.provider,
+                        model=self.model,
+                        prompt=prompt,
+                        temperature=self.temperature,
+                    ),
+                    timeout=self.timeout,
+                )
             elapsed_ms = int((time.time() - start_time) * 1000)
             return GenerationOutput(
                 content=result.content,
@@ -105,6 +141,67 @@ class GenerationAgent:
                 success=False,
             )
 
+    async def _generate_with_tools(self, prompt: str):
+        tool_executor = ToolExecutor(
+            self.tool_definitions, db=self.db, project_id=self.project_id
+        )
+        tools_for_llm = tool_executor.get_tools_for_llm()
+        if self.api_key:
+            provider = provider_manager.get_provider_from_config(
+                self.provider, self.model, self.api_key, self.base_url
+            )
+        else:
+            provider = provider_manager.get_provider(self.provider, self.model)
+        return await run_with_tools(
+            provider=provider,
+            prompt=prompt,
+            tools=tools_for_llm,
+            tool_executor=tool_executor,
+            temperature=self.temperature,
+        )
+
+    async def generate_stream(self, prompt: str) -> AsyncIterator[dict]:
+        try:
+            if self.tools and self.tool_definitions:
+                tool_executor = ToolExecutor(
+                    self.tool_definitions, db=self.db, project_id=self.project_id
+                )
+                tools_for_llm = tool_executor.get_tools_for_llm()
+                if self.api_key:
+                    provider = provider_manager.get_provider_from_config(
+                        self.provider, self.model, self.api_key, self.base_url
+                    )
+                else:
+                    provider = provider_manager.get_provider(self.provider, self.model)
+                async for event in stream_with_tools(
+                    provider=provider,
+                    prompt=prompt,
+                    tools=tools_for_llm,
+                    tool_executor=tool_executor,
+                    temperature=self.temperature,
+                ):
+                    yield event
+            elif self.api_key:
+                async for chunk in provider_manager.stream_from_config(
+                    provider_type=self.provider,
+                    model=self.model,
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    prompt=prompt,
+                    temperature=self.temperature,
+                ):
+                    yield {"type": "content", "data": chunk}
+                yield {"type": "done", "data": {"finish_reason": "stop"}}
+            else:
+                provider = provider_manager.get_provider(self.provider, self.model)
+                async for chunk in provider.stream_generate(
+                    prompt, temperature=self.temperature
+                ):
+                    yield {"type": "content", "data": chunk}
+                yield {"type": "done", "data": {"finish_reason": "stop"}}
+        except Exception as e:
+            yield {"type": "error", "data": str(e)}
+
 
 def create_diverse_agents(
     agent_configs: list[dict],
@@ -121,6 +218,14 @@ def create_diverse_agents(
             model=config.get("model", "gpt-4o-mini"),
             temperature=adjusted_temp,
             role_description=config.get("role_description", ""),
+            llm_config_id=config.get("llm_config_id"),
+            api_key=config.get("api_key", ""),
+            base_url=config.get("base_url", ""),
+            tools=config.get("tools", []),
+            tool_definitions=config.get("tool_definitions", []),
+            enable_streaming=config.get("enable_streaming", False),
+            db=config.get("db"),
+            project_id=config.get("project_id"),
         )
         agents.append(agent)
     return agents

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from app.agents.providers.base import LLMProvider, GenerateResult
 from app.agents.providers import create_provider
@@ -41,6 +41,17 @@ class ProviderManager:
             )
         return self._providers[cache_key]
 
+    def get_provider_from_config(self, provider_type: str, model: str, api_key: str, base_url: str = "") -> LLMProvider:
+        cache_key = f"cfg:{provider_type}:{model}:{hash(api_key)}"
+        if cache_key not in self._providers:
+            self._providers[cache_key] = create_provider(
+                provider_name=provider_type,
+                model=model,
+                api_key=api_key,
+                base_url=base_url or None,
+            )
+        return self._providers[cache_key]
+
     async def generate_with_fallback(
         self,
         provider_name: str,
@@ -72,6 +83,65 @@ class ProviderManager:
                 continue
 
         raise RuntimeError(f"All providers failed. Last error: {last_error}")
+
+    async def generate_from_config(
+        self,
+        provider_type: str,
+        model: str,
+        api_key: str,
+        base_url: str,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> GenerateResult:
+        provider = self.get_provider_from_config(provider_type, model, api_key, base_url)
+        return await provider.generate(prompt, temperature, max_tokens)
+
+    async def stream_from_config(
+        self,
+        provider_type: str,
+        model: str,
+        api_key: str,
+        base_url: str,
+        prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        provider = self.get_provider_from_config(provider_type, model, api_key, base_url)
+        async for chunk in provider.stream_generate(prompt, temperature, max_tokens):
+            yield chunk
+
+    async def generate_with_tools_from_config(
+        self,
+        provider_type: str,
+        model: str,
+        api_key: str,
+        base_url: str,
+        prompt: str,
+        tools: list[dict],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> GenerateResult:
+        provider = self.get_provider_from_config(provider_type, model, api_key, base_url)
+        return await provider.generate_with_tools(prompt, tools, temperature, max_tokens)
+
+    async def stream_with_tools_from_config(
+        self,
+        provider_type: str,
+        model: str,
+        api_key: str,
+        base_url: str,
+        prompt: str,
+        tools: list[dict],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[dict]:
+        provider = self.get_provider_from_config(provider_type, model, api_key, base_url)
+        async for event in provider.stream_generate_with_tools(prompt, tools, temperature, max_tokens):
+            yield event
+
+    def clear_cache(self):
+        self._providers.clear()
 
 
 provider_manager = ProviderManager()

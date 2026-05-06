@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,7 +20,11 @@ class AgentConfig(Base):
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
     role_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    llm_config_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("llm_provider_configs.id", ondelete="SET NULL"), nullable=True)
+    tools: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
+    enable_streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     project = relationship("Project", back_populates="agent_configs")
     generation_results = relationship("GenerationResult", back_populates="agent_config")
+    llm_config = relationship("LLMProviderConfig", back_populates="agent_configs")

@@ -10,6 +10,9 @@ export interface AgentConfig {
   temperature: number
   role_description: string
   is_builtin: boolean
+  llm_config_id?: string
+  tools?: string[]
+  enable_streaming?: boolean
 }
 
 export interface CreateAgentRequest {
@@ -19,6 +22,9 @@ export interface CreateAgentRequest {
   model?: string
   temperature?: number
   role_description?: string
+  llm_config_id?: string
+  tools?: string[]
+  enable_streaming?: boolean
 }
 
 export const agentApi = {
