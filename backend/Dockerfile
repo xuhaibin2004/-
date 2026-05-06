@@ -2,15 +2,9 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-ENV HTTP_PROXY= \
-    HTTPS_PROXY= \
-    http_proxy= \
-    https_proxy= \
-    NO_PROXY= \
-    no_proxy=
-
 COPY pyproject.toml .
-RUN pip install --no-cache-dir \
+RUN env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+    pip install --no-cache-dir \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.32.0" \
     "sqlalchemy[asyncio]>=2.0.0" \
