@@ -1,0 +1,1 @@
+import{a as e}from"./index-CONwvVRJ.js";const p={list:t=>e.get(`/projects/${t}/agents`),create:(t,s)=>e.post(`/projects/${t}/agents`,s),update:(t,s)=>e.put(`/agents/${t}`,s),delete:t=>e.delete(`/agents/${t}`),initTemplates:t=>e.post(`/projects/${t}/agents/init-templates`)};export{p as a};
