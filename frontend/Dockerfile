@@ -5,10 +5,18 @@ ARG HTTPS_PROXY
 ARG http_proxy
 ARG https_proxy
 
+ENV HTTP_PROXY= \
+    HTTPS_PROXY= \
+    http_proxy= \
+    https_proxy= \
+    NO_PROXY="*" \
+    no_proxy="*"
+
 WORKDIR /app
 
+COPY frontend/.npmrc .npmrc
 COPY frontend/package.json .
-RUN npm install --registry https://registry.npmmirror.com
+RUN npm install
 
 COPY frontend/ .
 RUN npm run build
