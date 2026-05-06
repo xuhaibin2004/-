@@ -1,0 +1,1 @@
+import{a as s}from"./index-CONwvVRJ.js";const o={list:t=>s.get(`/projects/${t}/tasks`),get:t=>s.get(`/tasks/${t}`),create:(t,a)=>s.post(`/projects/${t}/tasks`,a),getStatus:t=>s.get(`/tasks/${t}/status`)};export{o as t};
