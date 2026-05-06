@@ -2,15 +2,24 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources || true \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple .
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    fastapi>=0.115.0 \
+    uvicorn[standard]>=0.32.0 \
+    sqlalchemy[asyncio]>=2.0.0 \
+    asyncpg>=0.30.0 \
+    pgvector>=0.3.0 \
+    redis>=5.0.0 \
+    httpx>=0.27.0 \
+    pydantic>=2.0.0 \
+    pydantic-settings>=2.0.0 \
+    python-multipart>=0.0.9 \
+    websockets>=13.0 \
+    alembic>=1.13.0 \
+    openai>=1.50.0 \
+    anthropic>=0.35.0 \
+    numpy>=1.26.0 \
+    celery>=5.4.0
 
 COPY . .
 
