@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS base
+FROM docker.1ms.run/python:3.11-slim AS base
 
 WORKDIR /app
 
