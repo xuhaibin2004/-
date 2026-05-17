@@ -1,0 +1,1 @@
+import{a as t}from"./index-CONwvVRJ.js";const r={list:e=>t.get("/projects",{params:e}),get:e=>t.get(`/projects/${e}`),create:e=>t.post("/projects",e),update:(e,p)=>t.put(`/projects/${e}`,p),delete:e=>t.delete(`/projects/${e}`)};export{r as p};
